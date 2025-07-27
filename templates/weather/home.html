@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block title %}Home - Weather App{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reconnecting-websocket/1.0.0/reconnecting-websocket.min.js"></script>
+<script>
+    // WebSocket connection
+    document.addEventListener('DOMContentLoaded', function() {
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const wsPath = protocol + window.location.host + '/ws/weather/updates/';
+        const socket = new ReconnectingWebSocket(wsPath);
+        const connectionStatus = document.getElementById('connectionStatus');
+        const liveWeatherAlerts = document.getElementById('liveWeatherAlerts');
+        const notificationBadge = document.getElementById('notificationBadge');
+        let notificationCount = 0;
+
+        socket.onopen = function(e) {
+            console.log('WebSocket connected');
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.className = 'badge bg-success ms-2';
+            liveWeatherAlerts.innerHTML = `
+                <div class="alert alert-success">
+                    Connected to live weather updates. Waiting for data...
+                </div>
+            `;
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log('Received update:', data);
+            
+            // Update notification badge
+            notificationCount++;
+            notificationBadge.textContent = notificationCount;
+            
+            // Add new weather update
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-info weather-alert fade-in';
+            alertDiv.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${data.location}</strong><br>
+                        ${data.temperature}°C (Feels like ${data.feels_like}°C)<br>
+                        ${data.condition} - ${data.description}<br>
+                        💧 ${data.humidity}% | 💨 ${data.wind_speed} km/h
+                    </div>
+                    <small class="text-muted">Just now</small>
+                </div>
+            `;
+            
+            // Add to the top of the container
+            if (liveWeatherAlerts.firstChild) {
+                liveWeatherAlerts.insertBefore(alertDiv, liveWeatherAlerts.firstChild);
+            } else {
+                liveWeatherAlerts.appendChild(alertDiv);
+            }
+            
+            // Remove old updates if there are too many
+            while (liveWeatherAlerts.children.length > 10) {
+                liveWeatherAlerts.removeChild(liveWeatherAlerts.lastChild);
+            }
+        };
+
+        socket.onclose = function(event) {
+            if (event.wasClean) {
+                console.log(`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+            } else {
+                console.error('[close] Connection died');
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'badge bg-danger ms-2';
+                liveWeatherAlerts.innerHTML = `
+                    <div class="alert alert-warning">
+                        Connection lost. Attempting to reconnect...
+                    </div>
+                `;
+            }
+        };
+
+        socket.onerror = function(error) {
+            console.error(`[error] ${error.message}`);
+            connectionStatus.textContent = 'Error';
+            connectionStatus.className = 'badge bg-danger ms-2';
+        };
+    });
+</script>
+<style>
+    body {
+        background: linear-gradient(135deg, #87CEEB 0%, #1E90FF 100%);
+        background-image: url('https://www.transparenttextures.com/patterns/cloudy-day.png');
+        min-height: 100vh;
+    }
+    .container {
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+    .card {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        background-color: rgba(255, 255, 255, 0.8);
+    }
+    .card-header {
+        background-color: rgba(30, 144, 255, 0.1);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        font-weight: 600;
+    }
+    .notification-badge {
+        position: relative;
+        top: -10px;
+        right: 5px;
+    }
+    .weather-alert {
+        transition: all 0.3s ease;
+        border: 1px solid rgba(30, 144, 255, 0.2);
+    }
+    .fade-in {
+        animation: fadeIn 0.5s;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    h2, h5, h6 {
+        color: #1E3A8A;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="d-inline">Welcome, {{ user.username }}!</h2>
+            <span id="connectionStatus" class="badge bg-success ms-2">Connected</span>
+        </div>
+        <form action="{% url 'weather:logout' %}" method="post" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger">Logout</button>
+        </form>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Check Weather</h5>
+                </div>
+                <div class="card-body">
+                    <form id="weatherForm" class="mb-3">
+                        <div class="input-group">
+                            <input type="text" id="city" class="form-control" placeholder="Enter city name" required>
+                            <button type="submit" class="btn btn-primary">Get Weather</button>
+                        </div>
+                    </form>
+                    
+                    <div id="weatherResult" class="mt-3">
+                        <!-- Weather data will be displayed here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Live Weather Updates</h5>
+                    <span id="notificationBadge" class="badge bg-primary notification-badge">0</span>
+                </div>
+                <div class="card-body">
+                    <div id="liveWeatherAlerts" class="list-group">
+                        <div class="alert alert-info mb-0">
+                            Connecting to live weather updates...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Recent Weather</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_weather %}
+                        <div class="list-group">
+                            {% for weather in recent_weather %}
+                                <div class="list-group-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">{{ weather.location.city }}, {{ weather.location.country }}</h6>
+                                        <small>{{ weather.timestamp|timesince }} ago</small>
+                                    </div>
+                                    <p class="mb-1">{{ weather.temperature }}°C - {{ weather.weather_condition }}</p>
+                                    <small>Humidity: {{ weather.humidity }}% | Wind: {{ weather.wind_speed }} km/h</small>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No recent weather data available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('weatherForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const city = document.getElementById('city').value;
+        const resultDiv = document.getElementById('weatherResult');
+        
+        resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+        
+        fetch(`/api/weather/?city=${encodeURIComponent(city)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">${data.location.city}, ${data.location.country || 'N/A'}</h5>
+                                <h2>${data.weather.temperature}°C</h2>
+                                <p class="card-text">${data.weather.condition}</p>
+                                <p class="card-text">
+                                    <small>Humidity: ${data.weather.humidity}% | Wind: ${data.weather.wind_speed} km/h</small>
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<div class="alert alert-danger">Failed to fetch weather data. Please try again.</div>';
+                console.error('Error:', error);
+            });
+    });
+</script>
+{% endblock %}
